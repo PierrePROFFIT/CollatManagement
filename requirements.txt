@@ -6,5 +6,4 @@ datetime
 numpy
 deta
 openpyxl
-math
 yfinance

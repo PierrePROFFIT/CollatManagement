@@ -27,7 +27,7 @@ def app():
                         data_input_portfolio = pd.read_excel(filename_input_portfolio,engine="openpyxl").fillna("None")
                         st.write("Top rows of uploaded data")
                         st.write(data_input_portfolio.head())
-
+                #check column name
                 put_df(data_input_portfolio.to_dict('index'),"portfolio",date_selected,"Code ISIN",deta)
                 
                 st.subheader("Specify constraints for each Counterparty")
@@ -63,7 +63,7 @@ def app():
                                                 ud_constraints[i]["non_eligible_issue_country"] = st.multiselect(label='Issue Country (to exclude)',key='non_eligible_issue_country'+str(i),options=data_input_portfolio["Issuer Country"].unique(),default=deta_db_constraints_dict[i]["non_eligible_issue_country"])
                                                 ud_constraints[i]['non_eligible_issuer_sector'] = st.multiselect(label='Issuer Sector (to exclude)',key='non_eligible_issuer_sector'+str(i),options=data_input_portfolio["Issuer Sector"].unique(),default=deta_db_constraints_dict[i]["non_eligible_issuer_sector"])
                                                 ud_constraints[i]["non_eligible_ratings_agency_2"] = st.multiselect(label='Ratings Agency 2 (to exclude)',key='non_eligible_ratings_agency_2'+str(i),options=['AAA', 'AA', 'A', 'BBB','BB', 'B', 'CCC', 'CC','C'],default=deta_db_constraints_dict[i]["non_eligible_ratings_agency_2"])
-                                                ud_constraints[i]["non_eligible_adtv"] = st.selectbox(label='ADTV>3*average 3 month ADTV',key='non_eligible_adtv'+str(i),options=["Applicable","Not Applicable"],index=["Applicable","Not Applicable"].index(deta_db_constraints_dict[i]["non_eligible_adtv"]))
+                                                ud_constraints[i]["non_eligible_adtv"] = st.selectbox(label='ADTV>3*average 3 month ADTV (to exclude)',key='non_eligible_adtv'+str(i),options=["Applicable","Not Applicable"],index=["Applicable","Not Applicable"].index(deta_db_constraints_dict[i]["non_eligible_adtv"]))
                                                 #Concentration rule
                                                 ud_constraints[i]["concentration_rule_issuer_country"] = st.number_input(label='Concentration Issuer Country (Max.)',key='concentration_rule_issuer_country'+str(i),format="%g",value=deta_db_constraints_dict[i]["concentration_rule_issuer_country"])
                                                 ud_constraints[i]["concentration_rule_issuer_sector"] = st.number_input(label='Concentration Issuer Sector (Max.)',key='concentration_rule_issuer_sector'+str(i),format="%g",value=deta_db_constraints_dict[i]["concentration_rule_issuer_sector"])
@@ -78,11 +78,11 @@ def app():
                                                 #Objective
                                                 ud_constraints[i]["exposure"] = st.number_input(label='Exposure',key='exposure'+str(i),min_value=0,value=deta_db_constraints_dict[i]["exposure"])
                                         else:
-                                                ud_constraints[i]["non_eligible_type"] = st.multiselect(label='Type',key='non_eligible_type'+str(i),options=["Government Securities","Corporate Equity Securities","Corporate Debt Securities"])
-                                                ud_constraints[i]["non_eligible_issue_country"] = st.multiselect(label='Issue Country',key='non_eligible_issue_country'+str(i),options=data_input_portfolio["Issuer Country"].unique())
-                                                ud_constraints[i]['non_eligible_issuer_sector'] = st.multiselect(label='Issuer Sector',key='non_eligible_issuer_sector'+str(i),options=data_input_portfolio["Issuer Sector"].unique())
-                                                ud_constraints[i]["non_eligible_ratings_agency_2"] = st.multiselect(label='Ratings Agency 2 allowed',key='non_eligible_ratings_agency_2'+str(i),options=['AAA', 'AA', 'A', 'BBB','BB', 'B', 'CCC', 'CC','C'])
-                                                ud_constraints[i]["non_eligible_adtv"] = st.selectbox(label='ADTV>3*average 3 month ADTV',key='non_eligible_adtv'+str(i),options=["Applicable","Not Applicable"])
+                                                ud_constraints[i]["non_eligible_type"] = st.multiselect(label='Type (to exclude)',key='non_eligible_type'+str(i),options=["Government Securities","Corporate Equity Securities","Corporate Debt Securities"])
+                                                ud_constraints[i]["non_eligible_issue_country"] = st.multiselect(label='Issue Country (to exclude)',key='non_eligible_issue_country'+str(i),options=data_input_portfolio["Issuer Country"].unique())
+                                                ud_constraints[i]['non_eligible_issuer_sector'] = st.multiselect(label='Issuer Sector (to exclude)',key='non_eligible_issuer_sector'+str(i),options=data_input_portfolio["Issuer Sector"].unique())
+                                                ud_constraints[i]["non_eligible_ratings_agency_2"] = st.multiselect(label='Ratings Agency 2  (to exclude)',key='non_eligible_ratings_agency_2'+str(i),options=['AAA', 'AA', 'A', 'BBB','BB', 'B', 'CCC', 'CC','C'])
+                                                ud_constraints[i]["non_eligible_adtv"] = st.selectbox(label='ADTV>3*average 3 month ADTV (to exclude)',key='non_eligible_adtv'+str(i),options=["Applicable","Not Applicable"])
                                                 #Concentration rule
                                                 ud_constraints[i]["concentration_rule_issuer_country"] = st.number_input(label='Concentration Issuer Country (Max.)',key='concentration_rule_issuer_country'+str(i),format="%g",value=0.15)
                                                 ud_constraints[i]["concentration_rule_issuer_sector"] = st.number_input(label='Concentration Issuer Sector (Max.)',key='concentration_rule_issuer_sector'+str(i),format="%g",value=0.15)
@@ -139,7 +139,7 @@ def perform_optimization(constraint,df_portfolio):
         df_portfolio_2['Price EUR'] = df_portfolio_2['Price'].astype(float)*df_portfolio_2["Exchange Rate"].astype(float)
         df_portfolio_2['Market Capitalization'] = df_portfolio_2['Price EUR'].astype(float)*df_portfolio_2['Quantity'].astype(float)
         df_portfolio_2['ADTV_test'] = np.where(df_portfolio_2['ADTV'].astype(float)>3*df_portfolio_2['Average 3 Months ADTV'].astype(float),0,1)
-        df_portfolio_2["Quantity"].astype(int)
+        df_portfolio_2["Quantity"] = df_portfolio_2["Quantity"].astype(int)
         for j in constraint.keys():
                 df_portfolio_2["Eligible Counterparty "+str(j+1)] = df_portfolio_2.index.isin(apply_filter(df_portfolio_2,constraint[j])).astype(int)
                 df_portfolio_2['Haircut '+str(j+1)] = ((1-df_portfolio_2.apply(lambda x:apply_haircut(x,constraint[j]), axis=1))*(1-(df_portfolio_2['Currency']!='EUR')*constraint[j]["haircut_rule_cross_currency"])).round(4)
@@ -147,10 +147,11 @@ def perform_optimization(constraint,df_portfolio):
         df_portfolio_2.sort_values(by="new_ratings",inplace=True,axis=0,ascending=False)
         st.write(df_portfolio_2)
 
+        #Start optimization
         df_portfolio_2[["allocation "+str(i+1) for i in range(len(constraint.keys()))]] = 0
         df_portfolio_2[["allocation qtt"+str(i+1) for i in range(len(constraint.keys()))]] = 0
-        df_portfolio_2["el_list"] = 0
-        df_portfolio_2["alloc poss"] =0
+        #df_portfolio_2["el_list"] = 0
+        #df_portfolio_2["alloc poss"] =0
         for ind,row in df_portfolio_2.iterrows():
                 st.write(ind)
                 eligible=[]
@@ -159,20 +160,30 @@ def perform_optimization(constraint,df_portfolio):
                         eligibility_filter = df_portfolio_2.loc[ind,"Eligible Counterparty "+str(j+1)] == 1
                         exposure_filter = df_portfolio_2["allocation "+str(j+1)].sum()<constraint[j]["exposure"]
                         concentration_rule_issuer_country_filter = df_portfolio_2[df_portfolio_2["Issuer Country"]==df_portfolio_2.loc[ind,"Issuer Country"]]["allocation "+str(j+1)].sum()<constraint[j]["concentration_rule_issuer_country"]*constraint[j]["exposure"]
-                        concentration_rule_issuer_sector_filter = df_portfolio_2[df_portfolio_2["Issuer Sector"]==df_portfolio_2.loc[ind,"Issuer Sector"]]["allocation "+str(j+1)].sum()<constraint[j]["concentration_rule_issuer_sector"]*constraint[j]["exposure"]
+                        st.write(df_portfolio_2.loc[ind,"Issuer Sector"])
+                        if df_portfolio_2.loc[ind,"Issuer Sector"]!="None":
+                                concentration_rule_issuer_sector_filter = df_portfolio_2[df_portfolio_2["Issuer Sector"]==df_portfolio_2.loc[ind,"Issuer Sector"]]["allocation "+str(j+1)].sum()<constraint[j]["concentration_rule_issuer_sector"]*constraint[j]["exposure"]
+                        else:
+                                st.write("############")
+                                concentration_rule_issuer_sector_filter = True
                         st.write(exposure_filter,concentration_rule_issuer_country_filter,concentration_rule_issuer_sector_filter)
                         if eligibility_filter & exposure_filter & concentration_rule_issuer_country_filter & concentration_rule_issuer_sector_filter:
                                 max_add_exposure = constraint[j]["exposure"]-df_portfolio_2["allocation "+str(j+1)].sum()
                                 max_add_issuer_country = constraint[j]["exposure"]*constraint[j]["concentration_rule_issuer_country"] - df_portfolio_2[df_portfolio_2["Issuer Country"]==df_portfolio_2.loc[ind,"Issuer Country"]]["allocation "+str(j+1)].sum()
-                                max_add_issuer_sector = constraint[j]["exposure"]*constraint[j]["concentration_rule_issuer_sector"] - df_portfolio_2[df_portfolio_2["Issuer Sector"]==df_portfolio_2.loc[ind,"Issuer Sector"]]["allocation "+str(j+1)].sum()
+                                if df_portfolio_2.loc[ind,"Issuer Sector"]!="None":
+                                        max_add_issuer_sector = constraint[j]["exposure"]*constraint[j]["concentration_rule_issuer_sector"] - df_portfolio_2[df_portfolio_2["Issuer Sector"]==df_portfolio_2.loc[ind,"Issuer Sector"]]["allocation "+str(j+1)].sum()
+                                else:
+                                        max_add_issuer_sector=max_add_issuer_country
                                 st.write(max_add_exposure,max_add_issuer_country,max_add_issuer_sector)
                                 max_add_total = min(max_add_exposure,max_add_issuer_country,max_add_issuer_sector)
-                                eligible.append((j+1,max_add_total))
+                                max_add_concentration = min(max_add_issuer_country,max_add_issuer_sector)
+                                eligible.append((j+1,max_add_total,max_add_concentration))
                 
                 st.write(eligible)
                 if len(eligible)>0:
                         possible_allocation = {}
                         for k in range(len(eligible)):
+                                max_add_concentration = eligible[k][2]
                                 max_add_total = eligible[k][1]
                                 j = eligible[k][0]
                                 possible_allocation[j] = {}
@@ -184,7 +195,11 @@ def perform_optimization(constraint,df_portfolio):
                                         price=df_portfolio_2.loc[ind,"Price EUR"]
                                         haircut=df_portfolio_2.loc[ind, 'Haircut '+str(j)]
                                         st.write(qtt,price,haircut,max_add_total)
-                                        possible_allocation[j]["allocation qtt"] = floor(max_add_total/(price*haircut))
+                                        #ceil
+                                        if max_add_concentration==max_add_total:
+                                                possible_allocation[j]["allocation qtt"] = floor(max_add_total/(price*haircut))
+                                        else:
+                                                possible_allocation[j]["allocation qtt"] = ceil(max_add_total/(price*haircut))
                                         possible_allocation[j]["allocation"] = possible_allocation[j]["allocation qtt"]*price*haircut
                         st.write(possible_allocation)
                         if len(eligible)==1:
@@ -209,6 +224,7 @@ def perform_optimization(constraint,df_portfolio):
                                 if df_portfolio_2.loc[ind,"Value "+str(keys[0])] == df_portfolio_2.loc[ind,"Value "+str(keys[1])]:
                                         df_portfolio_2.loc[ind,"allocation qtt"+str(keys[0])] = min(min(floor(df_portfolio_2.loc[ind,"Quantity"]/2), possible_allocation[keys[0]]["allocation qtt"]) + max(0,ceil(df_portfolio_2.loc[ind,"Quantity"]/2)- possible_allocation[keys[1]]["allocation qtt"]),possible_allocation[keys[0]]["allocation qtt"])
                                         df_portfolio_2.loc[ind,"allocation qtt"+str(keys[1])] = min(min(ceil(df_portfolio_2.loc[ind,"Quantity"]/2), possible_allocation[keys[1]]["allocation qtt"]) + max(0,floor(df_portfolio_2.loc[ind,"Quantity"]/2)-possible_allocation[keys[0]]["allocation qtt"]),possible_allocation[keys[1]]["allocation qtt"])
+                                        
                                         df_portfolio_2.loc[ind,"allocation "+str(keys[0])]=df_portfolio_2.loc[ind,"allocation qtt"+str(keys[0])]*df_portfolio_2.loc[ind,"Price EUR"]*df_portfolio_2.loc[ind, 'Haircut '+str(keys[0])]
                                         df_portfolio_2.loc[ind,"allocation "+str(keys[1])]=df_portfolio_2.loc[ind,"allocation qtt"+str(keys[1])]*df_portfolio_2.loc[ind,"Price EUR"]*df_portfolio_2.loc[ind, 'Haircut '+str(keys[1])]
 

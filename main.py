@@ -5,6 +5,9 @@ from deta import Deta
 import numpy as np
 from math import floor, ceil
 import yfinance as yf
+import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 #streamlit run c:/Users/pierr/OneDrive/Documents/CollatManagement/main.py
 # attention option qui disappear de base
@@ -31,7 +34,6 @@ def app():
                 put_df(data_input_portfolio.to_dict('index'),"portfolio",date_selected,"Code ISIN",deta)
                 
                 st.subheader("Specify constraints for each Counterparty")
-
                 deta_db_constraints = deta.Base("constraints_"+str(date_selected))
                 deta_db_constraints_list = deta_db_constraints.fetch().items
                 if len(deta_db_constraints_list)!=0:
@@ -42,8 +44,13 @@ def app():
                         
                         #nb_agents_default = deta_db_constraints_df.shape[0]
                 else:
-                        pass
-                        #nb_agents_default = 3
+                        deta_db_constraints = deta.Base("constraints_"+str('2022-11-13'))
+                        deta_db_constraints_list = deta_db_constraints.fetch().items
+                        if len(deta_db_constraints_list)!=0:
+                                deta_db_constraints_df = pd.DataFrame(deta_db_constraints_list)
+                                st.write("Found agents already defined in database (default)")
+                                st.write(deta_db_constraints_df.set_index("counterparty"))
+                                deta_db_constraints_dict = deta_db_constraints_df.to_dict("index")
 
                 #nb_agents = st.number_input("Number of agents",min_value=1,value=nb_agents_default)
 
@@ -102,7 +109,9 @@ def app():
                 if submitted:
                         put_df(ud_constraints,"constraints",date_selected,"counterparty",deta)
                         rsltt = perform_optimization(ud_constraints,data_input_portfolio)
-                        st.download_button('Download CSV',convert_df(rsltt), "testtt.csv",'text/csv')
+                        visualize_output(rsltt)
+                        st.download_button('Download CSV',convert_df(rsltt), "output.csv",'text/csv')
+
 
 
 def put_df(dict_data,name,date,key_field,deta):
@@ -150,6 +159,8 @@ def perform_optimization(constraint,df_portfolio):
         #Start optimization
         df_portfolio_2[["allocation "+str(i+1) for i in range(len(constraint.keys()))]] = 0
         df_portfolio_2[["allocation qtt"+str(i+1) for i in range(len(constraint.keys()))]] = 0
+
+        attribution_order_if_eq_value = [1,2,3]
         #df_portfolio_2["el_list"] = 0
         #df_portfolio_2["alloc poss"] =0
         for ind,row in df_portfolio_2.iterrows():
@@ -160,13 +171,13 @@ def perform_optimization(constraint,df_portfolio):
                         eligibility_filter = df_portfolio_2.loc[ind,"Eligible Counterparty "+str(j+1)] == 1
                         exposure_filter = df_portfolio_2["allocation "+str(j+1)].sum()<constraint[j]["exposure"]
                         concentration_rule_issuer_country_filter = df_portfolio_2[df_portfolio_2["Issuer Country"]==df_portfolio_2.loc[ind,"Issuer Country"]]["allocation "+str(j+1)].sum()<constraint[j]["concentration_rule_issuer_country"]*constraint[j]["exposure"]
-                        st.write(df_portfolio_2.loc[ind,"Issuer Sector"])
+                        #st.write(df_portfolio_2.loc[ind,"Issuer Sector"])
                         if df_portfolio_2.loc[ind,"Issuer Sector"]!="None":
                                 concentration_rule_issuer_sector_filter = df_portfolio_2[df_portfolio_2["Issuer Sector"]==df_portfolio_2.loc[ind,"Issuer Sector"]]["allocation "+str(j+1)].sum()<constraint[j]["concentration_rule_issuer_sector"]*constraint[j]["exposure"]
                         else:
-                                st.write("############")
+                                #st.write("############")
                                 concentration_rule_issuer_sector_filter = True
-                        st.write(exposure_filter,concentration_rule_issuer_country_filter,concentration_rule_issuer_sector_filter)
+                        #st.write(exposure_filter,concentration_rule_issuer_country_filter,concentration_rule_issuer_sector_filter)
                         if eligibility_filter & exposure_filter & concentration_rule_issuer_country_filter & concentration_rule_issuer_sector_filter:
                                 max_add_exposure = constraint[j]["exposure"]-df_portfolio_2["allocation "+str(j+1)].sum()
                                 max_add_issuer_country = constraint[j]["exposure"]*constraint[j]["concentration_rule_issuer_country"] - df_portfolio_2[df_portfolio_2["Issuer Country"]==df_portfolio_2.loc[ind,"Issuer Country"]]["allocation "+str(j+1)].sum()
@@ -179,7 +190,7 @@ def perform_optimization(constraint,df_portfolio):
                                 max_add_concentration = min(max_add_issuer_country,max_add_issuer_sector)
                                 eligible.append((j+1,max_add_total,max_add_concentration))
                 
-                st.write(eligible)
+                #st.write(eligible)
                 if len(eligible)>0:
                         possible_allocation = {}
                         for k in range(len(eligible)):
@@ -194,81 +205,39 @@ def perform_optimization(constraint,df_portfolio):
                                         qtt=df_portfolio_2.loc[ind,"Quantity"]
                                         price=df_portfolio_2.loc[ind,"Price EUR"]
                                         haircut=df_portfolio_2.loc[ind, 'Haircut '+str(j)]
-                                        st.write(qtt,price,haircut,max_add_total)
+                                        #st.write(qtt,price,haircut,max_add_total)
                                         #ceil
                                         if max_add_concentration==max_add_total:
                                                 possible_allocation[j]["allocation qtt"] = floor(max_add_total/(price*haircut))
                                         else:
                                                 possible_allocation[j]["allocation qtt"] = ceil(max_add_total/(price*haircut))
                                         possible_allocation[j]["allocation"] = possible_allocation[j]["allocation qtt"]*price*haircut
-                        st.write(possible_allocation)
-                        if len(eligible)==1:
-                                print(1)
-                                for k in possible_allocation.keys():
-                                        df_portfolio_2.loc[ind,"allocation "+str(k)] = possible_allocation[k]["allocation"]
-                                        df_portfolio_2.loc[ind,"allocation qtt"+str(k)] = possible_allocation[k]["allocation qtt"]
+                        #st.write(possible_allocation)
 
-                        if len(eligible)==2:
-                                print(2)
-                                keys = [k for k in possible_allocation.keys()]
-                                values = [df_portfolio_2.loc[ind,"Value "+str(k)] for k in keys]
-                                for combin in [[0,1],[1,0]]:
-                                        high = keys[combin[0]]
-                                        low = keys[combin[1]]
-                                        if df_portfolio_2.loc[ind,"Value "+str(high)] > df_portfolio_2.loc[ind,"Value "+str(low)]:
-                                                df_portfolio_2.loc[ind,"allocation "+str(high)] = possible_allocation[high]["allocation"]
-                                                df_portfolio_2.loc[ind,"allocation qtt"+str(high)] = possible_allocation[high]["allocation qtt"]
-                                                if df_portfolio_2.loc[ind,"allocation qtt"+str(high)] != df_portfolio_2.loc[ind,"Quantity"]:
-                                                        df_portfolio_2.loc[ind,"allocation qtt"+str(low)] = min(df_portfolio_2.loc[ind,"Quantity"]-df_portfolio_2.loc[ind,"allocation qtt"+str(high)],possible_allocation[low]["allocation qtt"])
-                                                        df_portfolio_2.loc[ind,"allocation "+str(low)] = df_portfolio_2.loc[ind,"allocation qtt"+str(low)]*df_portfolio_2.loc[ind,"Price EUR"]*df_portfolio_2.loc[ind, 'Haircut '+str(low)]
-                                if df_portfolio_2.loc[ind,"Value "+str(keys[0])] == df_portfolio_2.loc[ind,"Value "+str(keys[1])]:
-                                        df_portfolio_2.loc[ind,"allocation qtt"+str(keys[0])] = min(min(floor(df_portfolio_2.loc[ind,"Quantity"]/2), possible_allocation[keys[0]]["allocation qtt"]) + max(0,ceil(df_portfolio_2.loc[ind,"Quantity"]/2)- possible_allocation[keys[1]]["allocation qtt"]),possible_allocation[keys[0]]["allocation qtt"])
-                                        df_portfolio_2.loc[ind,"allocation qtt"+str(keys[1])] = min(min(ceil(df_portfolio_2.loc[ind,"Quantity"]/2), possible_allocation[keys[1]]["allocation qtt"]) + max(0,floor(df_portfolio_2.loc[ind,"Quantity"]/2)-possible_allocation[keys[0]]["allocation qtt"]),possible_allocation[keys[1]]["allocation qtt"])
-                                        
-                                        df_portfolio_2.loc[ind,"allocation "+str(keys[0])]=df_portfolio_2.loc[ind,"allocation qtt"+str(keys[0])]*df_portfolio_2.loc[ind,"Price EUR"]*df_portfolio_2.loc[ind, 'Haircut '+str(keys[0])]
-                                        df_portfolio_2.loc[ind,"allocation "+str(keys[1])]=df_portfolio_2.loc[ind,"allocation qtt"+str(keys[1])]*df_portfolio_2.loc[ind,"Price EUR"]*df_portfolio_2.loc[ind, 'Haircut '+str(keys[1])]
+                        #attribution_order_if_eq_value=[2,1,3]
+                        row_values = row[['Value '+str(v) for v in attribution_order_if_eq_value]]
+                        #st.write(row_values)
+                        row_values.index=attribution_order_if_eq_value
+                        attribution_order_if_non_eq_value = list(row_values.sort_values(ascending=False).index)
 
-                        if len(eligible)==3:
-                                keys = [k for k in possible_allocation.keys()]
-                                values = [df_portfolio_2.loc[ind,"Value "+str(k)] for k in keys]
-                                for combin in [[0,1,2],[0,2,1],[1,0,2],[1,2,0],[2,1,0],[2,0,1]]:
-                                        high = keys[combin[0]]
-                                        mid = keys[combin[1]]
-                                        low = keys[combin[2]]
-                                        if (df_portfolio_2.loc[ind,"Value "+str(high)] > df_portfolio_2.loc[ind,"Value "+str(low)]) & (df_portfolio_2.loc[ind,"Value "+str(high)] > df_portfolio_2.loc[ind,"Value "+str(mid)]) & (df_portfolio_2.loc[ind,"Value "+str(mid)] > df_portfolio_2.loc[ind,"Value "+str(low)]):
-                                                df_portfolio_2.loc[ind,"allocation "+str(high)] = possible_allocation[high]["allocation"]
-                                                df_portfolio_2.loc[ind,"allocation qtt"+str(high)] = possible_allocation[high]["allocation qtt"]
-                                                if df_portfolio_2.loc[ind,"allocation qtt"+str(high)] != df_portfolio_2.loc[ind,"Quantity"+str(high)]:
-                                                        df_portfolio_2.loc[ind,"allocation qtt"+str(mid)] = min(df_portfolio_2.loc[ind,"Quantity"]-df_portfolio_2.loc[ind,"allocation qtt"+str(high)],possible_allocation[mid]["allocation qtt"])
-                                                        df_portfolio_2.loc[ind,"allocation "+str(mid)] = df_portfolio_2.loc[ind,"allocation qtt"+str(mid)]*df_portfolio_2.loc[ind,"Price EUR"]*df_portfolio_2.loc[ind, 'Haircut '+str(mid)]
-                                                        if df_portfolio_2.loc[ind,"allocation qtt"+str(high)] + df_portfolio_2.loc[ind,"allocation qtt"+str(mid)] != df_portfolio_2.loc[ind,"Quantity"+str(high)]:
-                                                                df_portfolio_2.loc[ind,"allocation qtt"+str(low)] = min(df_portfolio_2.loc[ind,"Quantity"]-df_portfolio_2.loc[ind,"allocation qtt"+str(high)]-df_portfolio_2.loc[ind,"allocation qtt"+str(mid)],possible_allocation[low]["allocation qtt"])
-                                                                df_portfolio_2.loc[ind,"allocation "+str(low)] = df_portfolio_2.loc[ind,"allocation qtt"+str(low)]*df_portfolio_2.loc[ind,"Price EUR"]*df_portfolio_2.loc[ind, 'Haircut '+str(low)]
-                                        elif (df_portfolio_2.loc[ind,"Value "+str(high)] == df_portfolio_2.loc[ind,"Value "+str(mid)]) & (df_portfolio_2.loc[ind,"Value "+str(high)] > df_portfolio_2.loc[ind,"Value "+str(low)]):
-                                                df_portfolio_2.loc[ind,"allocation qtt"+str(high)] = min(min(floor(df_portfolio_2.loc[ind,"Quantity"]/2), possible_allocation[high]["allocation qtt"]) + max(0,ceil(df_portfolio_2.loc[ind,"Quantity"]/2)- possible_allocation[mid]["allocation qtt"]),possible_allocation[high]["allocation qtt"])
-                                                df_portfolio_2.loc[ind,"allocation qtt"+str(mid)] = min(min(ceil(df_portfolio_2.loc[ind,"Quantity"]/2), possible_allocation[mid]["allocation qtt"]) + max(0,floor(df_portfolio_2.loc[ind,"Quantity"]/2)-possible_allocation[high]["allocation qtt"]),possible_allocation[mid]["allocation qtt"])
-                                                df_portfolio_2.loc[ind,"allocation "+str(high)]=df_portfolio_2.loc[ind,"allocation qtt"+str(high)]*df_portfolio_2.loc[ind,"Price EUR"]*df_portfolio_2.loc[ind, 'Haircut '+str(high)]
-                                                df_portfolio_2.loc[ind,"allocation "+str(mid)]=df_portfolio_2.loc[ind,"allocation qtt"+str(mid)]*df_portfolio_2.loc[ind,"Price EUR"]*df_portfolio_2.loc[ind, 'Haircut '+str(mid)]
+                        #st.write(attribution_order_if_non_eq_value)
+                        #attribution_order_if_non_eq_value=[1,2,3]
+                        keys = [k for k in possible_allocation.keys()]
+                        keys = [k for k in attribution_order_if_non_eq_value if k in keys]
+                        st.write(keys)
 
-                                                if df_portfolio_2.loc[ind,"allocation qtt"+str(high)] + df_portfolio_2.loc[ind,"allocation qtt"+str(mid)] != df_portfolio_2.loc[ind,"Quantity"+str(high)]:
-                                                        df_portfolio_2.loc[ind,"allocation qtt"+str(low)] = min(df_portfolio_2.loc[ind,"Quantity"]-df_portfolio_2.loc[ind,"allocation qtt"+str(high)]-df_portfolio_2.loc[ind,"allocation qtt"+str(mid)],possible_allocation[low]["allocation qtt"])
-                                                        df_portfolio_2.loc[ind,"allocation "+str(low)] = df_portfolio_2.loc[ind,"allocation qtt"+str(low)]*df_portfolio_2.loc[ind,"Price EUR"]*df_portfolio_2.loc[ind, 'Haircut '+str(low)]
-                                
-                                if df_portfolio_2.loc[ind,"Value "+str(keys[0])] == df_portfolio_2.loc[ind,"Value "+str(keys[1])] == df_portfolio_2.loc[ind,"Value "+str(keys[2])]:
-                                        df_portfolio_2.loc[ind,"allocation qtt"+str(keys[0])] = min(min(floor(df_portfolio_2.loc[ind,"Quantity"]/3), possible_allocation[keys[0]]["allocation qtt"]) + max(0,ceil(df_portfolio_2.loc[ind,"Quantity"]/3)- possible_allocation[keys[1]]["allocation qtt"])+ max(0,floor(df_portfolio_2.loc[ind,"Quantity"]/3)- possible_allocation[keys[2]]["allocation qtt"]),possible_allocation[keys[0]]["allocation qtt"])
-                                        df_portfolio_2.loc[ind,"allocation qtt"+str(keys[1])] = min(min(ceil(df_portfolio_2.loc[ind,"Quantity"]/3), possible_allocation[keys[1]]["allocation qtt"]) + max(0,floor(df_portfolio_2.loc[ind,"Quantity"]/3)-possible_allocation[keys[0]]["allocation qtt"])+ max(0,floor(df_portfolio_2.loc[ind,"Quantity"]/3)- possible_allocation[keys[2]]["allocation qtt"]),possible_allocation[keys[1]]["allocation qtt"])
-                                        df_portfolio_2.loc[ind,"allocation qtt"+str(keys[2])] = min(min(floor(df_portfolio_2.loc[ind,"Quantity"]/3), possible_allocation[keys[2]]["allocation qtt"]) + max(0,floor(df_portfolio_2.loc[ind,"Quantity"]/3)- possible_allocation[keys[0]]["allocation qtt"])+ max(0,ceil(df_portfolio_2.loc[ind,"Quantity"]/3)- possible_allocation[keys[1]]["allocation qtt"]),possible_allocation[keys[2]]["allocation qtt"])
-                                        df_portfolio_2.loc[ind,"allocation "+str(keys[0])]=df_portfolio_2.loc[ind,"allocation qtt"+str(keys[0])]*df_portfolio_2.loc[ind,"Price EUR"]*df_portfolio_2.loc[ind, 'Haircut '+str(keys[0])]
-                                        df_portfolio_2.loc[ind,"allocation "+str(keys[1])]=df_portfolio_2.loc[ind,"allocation qtt"+str(keys[1])]*df_portfolio_2.loc[ind,"Price EUR"]*df_portfolio_2.loc[ind, 'Haircut '+str(keys[1])]
-                                        df_portfolio_2.loc[ind,"allocation "+str(keys[2])]=df_portfolio_2.loc[ind,"allocation qtt"+str(keys[2])]*df_portfolio_2.loc[ind,"Price EUR"]*df_portfolio_2.loc[ind, 'Haircut '+str(keys[2])]
-
-                                        
-                                        
-
-
+                        df_portfolio_2.loc[ind,"allocation "+str(keys[0])] = possible_allocation[keys[0]]["allocation"]
+                        df_portfolio_2.loc[ind,"allocation qtt"+str(keys[0])] = possible_allocation[keys[0]]["allocation qtt"]
+                        if (len(keys)>=2) & (df_portfolio_2.loc[ind,"allocation qtt"+str(keys[0])] != df_portfolio_2.loc[ind,"Quantity"]):
+                                df_portfolio_2.loc[ind,"allocation qtt"+str(keys[1])] = min(df_portfolio_2.loc[ind,"Quantity"]-df_portfolio_2.loc[ind,"allocation qtt"+str(keys[0])],possible_allocation[keys[1]]["allocation qtt"])
+                                df_portfolio_2.loc[ind,"allocation "+str(keys[1])] = df_portfolio_2.loc[ind,"allocation qtt"+str(keys[1])]*df_portfolio_2.loc[ind,"Price EUR"]*df_portfolio_2.loc[ind, 'Haircut '+str(keys[1])]
+                                if (len(keys)==3) & (df_portfolio_2.loc[ind,"allocation qtt"+str(keys[0])] + df_portfolio_2.loc[ind,"allocation qtt"+str(keys[1])] != df_portfolio_2.loc[ind,"Quantity"]):
+                                        df_portfolio_2.loc[ind,"allocation qtt"+str(keys[2])] = min(df_portfolio_2.loc[ind,"Quantity"]-df_portfolio_2.loc[ind,"allocation qtt"+str(keys[0])]-df_portfolio_2.loc[ind,"allocation qtt"+str(keys[1])],possible_allocation[keys[2]]["allocation qtt"])
+                                        df_portfolio_2.loc[ind,"allocation "+str(keys[2])] = df_portfolio_2.loc[ind,"allocation qtt"+str(keys[2])]*df_portfolio_2.loc[ind,"Price EUR"]*df_portfolio_2.loc[ind, 'Haircut '+str(keys[2])]
+      
         #filter portfolio : eligible_counterparty_i, sort by score
         # go through each line, check that respect conditions
-
+        st.write(df_portfolio_2[["allocation 1","allocation 2","allocation 3"]].sum())
         return df_portfolio_2
 
 def apply_filter(data,constraint):
@@ -296,6 +265,20 @@ def apply_haircut(data,constraint):
     return constraint["haircut_rule_govies_BB_CC"] 
   else:
     return 0
+
+def visualize_output(data):
+        fig = make_subplots(rows=1, cols=3,specs=[[{"type": "pie"}, {"type": "pie"},{"type": "pie"}]])
+        for i in [1,2,3]:
+                data2 = data.groupby("Issuer Sector")[["allocation "+str(i)]].sum()
+                #fig = go.Figure()
+                fig.add_trace(go.Pie(labels=data2.index, values = data2["allocation "+str(i)]),row=1,col=i)
+        st.plotly_chart(fig)
+        fig = make_subplots(rows=1, cols=3,specs=[[{"type": "pie"}, {"type": "pie"},{"type": "pie"}]])
+        for i in [1,2,3]:
+                data2 = data.groupby("Issuer Country")[["allocation "+str(i)]].sum()
+                #fig = go.Figure()
+                fig.add_trace(go.Pie(labels=data2.index, values = data2["allocation "+str(i)]),row=1,col=i )
+        st.plotly_chart(fig)
 
 def get_exchange_rate(data):
         if data["Currency"]=="EUR":

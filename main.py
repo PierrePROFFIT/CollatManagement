@@ -18,15 +18,12 @@ def app():
         #Establishing connection
         deta = Deta(key)
 
-        st.subheader("Upload portfolio in distant database")
+        st.subheader("--Upload portfolio in distant database--")
         #check = st.checkbox("Show default")
         date_selected = st.date_input("Date for which to perform Collateral Managment optimization")
-        if date_selected=="2022-11-01":
-                filename_input_portfolio = "lib/data/Portfolio.xlsx"
-        else:
-                filename_input_portfolio = st.file_uploader("Upload Portfolio CSV or XLSX file", type=([".csv",".xlsx"]))
-        if filename_input_portfolio==None:
-                filename_input_portfolio = "lib/data/Portfolio.xlsx"
+        filename_input_portfolio = st.file_uploader("Upload Portfolio CSV or XLSX file", type=([".csv",".xlsx"]))
+        #if filename_input_portfolio==None:
+        #        filename_input_portfolio = "lib/data/Portfolio.xlsx"
 
         if filename_input_portfolio:
                 if filename_input_portfolio != "lib/data/Portfolio.xlsx":
@@ -45,7 +42,7 @@ def app():
                 #check column name
                 put_df(data_input_portfolio.to_dict('index'),"portfolio",date_selected,"Code ISIN",deta)
                 
-                st.subheader("Specify constraints for each Counterparty")
+                st.subheader("--Specify constraints for each Counterparty--")
                 deta_db_constraints = deta.Base("constraints_"+str(date_selected))
                 deta_db_constraints_list = deta_db_constraints.fetch().items
                 if len(deta_db_constraints_list)!=0:
@@ -120,7 +117,9 @@ def app():
                         submitted = st.form_submit_button('Submit')
                 if submitted:
                         put_df(ud_constraints,"constraints",date_selected,"counterparty",deta)
+                        st.subheader("--Output--")
                         optimization_ouput = perform_optimization(ud_constraints,data_input_portfolio)
+                        st.subheader("--Output Visualization--")
                         visualize_output(optimization_ouput)
                         st.download_button('Download CSV',convert_df(optimization_ouput), "output.csv",'text/csv')
 
@@ -149,8 +148,8 @@ def convert_df(df):
     return df.to_csv().encode('utf-8')
 
 def perform_optimization(constraint,df_portfolio):
-        attribution_order_if_eq_value = [1,3,2]
-        rule_split=True
+        attribution_order_if_eq_value = [1,2,3]
+        rule_split=False
         #st.write(constraint)
         df_ratings = pd.read_excel("lib/data/ratings_project.xlsx")
         #st.write(df_portfolio)
@@ -275,10 +274,29 @@ def perform_optimization(constraint,df_portfolio):
                                                         df_portfolio_2.loc[ind,"allocation "+str(keys[1])] = df_portfolio_2.loc[ind,"allocation qtt"+str(keys[1])]*df_portfolio_2.loc[ind,"Price EUR"]*df_portfolio_2.loc[ind, 'Haircut '+str(keys[1])]
                                 if len(keys)==3:
                                         if (df_portfolio_2.loc[ind,"Value "+str(keys[0])] == df_portfolio_2.loc[ind,"Value "+str(keys[1])]) & (df_portfolio_2.loc[ind,"Value "+str(keys[0])] == df_portfolio_2.loc[ind,"Value "+str(keys[2])]):
-                                                df_portfolio_2.loc[ind,"allocation qtt"+str(keys[0])] = min(possible_allocation[keys[0]]["allocation qtt"],floor(df_portfolio_2.loc[ind,"Quantity"]/3)+max(0,floor(df_portfolio_2.loc[ind,"Quantity"]/3)-possible_allocation[keys[1]]["allocation qtt"])+max(0,floor(df_portfolio_2.loc[ind,"Quantity"]/3)-possible_allocation[keys[2]]["allocation qtt"]))
-                                                df_portfolio_2.loc[ind,"allocation qtt"+str(keys[1])] = min(possible_allocation[keys[1]]["allocation qtt"],floor(df_portfolio_2.loc[ind,"Quantity"]/3)+max(0,floor(df_portfolio_2.loc[ind,"Quantity"]/3)-possible_allocation[keys[0]]["allocation qtt"])+max(0,floor(df_portfolio_2.loc[ind,"Quantity"]/3)-possible_allocation[keys[2]]["allocation qtt"]))
-                                                df_portfolio_2.loc[ind,"allocation qtt"+str(keys[2])] = min(possible_allocation[keys[2]]["allocation qtt"],floor(df_portfolio_2.loc[ind,"Quantity"]/3)+max(0,floor(df_portfolio_2.loc[ind,"Quantity"]/3)-possible_allocation[keys[0]]["allocation qtt"])+max(0,floor(df_portfolio_2.loc[ind,"Quantity"]/3)-possible_allocation[keys[1]]["allocation qtt"]))
+                                                if ind==57:
+                                                      st.write(possible_allocation[keys[0]]["allocation qtt"])
+                                                      st.write(floor(df_portfolio_2.loc[ind,"Quantity"]/3))
+                                                      st.write(floor(df_portfolio_2.loc[ind,"Quantity"]/3)-possible_allocation[keys[1]]["allocation qtt"])
+                                                      st.write(floor(df_portfolio_2.loc[ind,"Quantity"]/3)-possible_allocation[keys[2]]["allocation qtt"])
+                                                      st.write(possible_allocation)
+                                                keys_saturation = [k for k in keys if (possible_allocation[k]["allocation qtt"])>=(floor(df_portfolio_2.loc[ind,"Quantity"]/3))]
+                                                keys_no_saturation = [k for k in keys if (possible_allocation[k]["allocation qtt"])<(floor(df_portfolio_2.loc[ind,"Quantity"]/3))]
+                                                for k in keys_no_saturation:
+                                                        df_portfolio_2.loc[ind,"allocation qtt"+str(k)] = possible_allocation[k]["allocation qtt"]
+                                                for k in keys_saturation:
+                                                        df_portfolio_2.loc[ind,"allocation qtt"+str(k)] = floor(df_portfolio_2.loc[ind,"Quantity"]/3)
+                                                        for kn in keys_no_saturation:
+                                                                df_portfolio_2.loc[ind,"allocation qtt"+str(k)] += floor(floor(df_portfolio_2.loc[ind,"Quantity"]/3)-df_portfolio_2.loc[ind,"allocation qtt"+str(kn)]/len(keys_saturation))
+
+                                                #df_portfolio_2.loc[ind,"allocation qtt"+str(keys[0])] = min(possible_allocation[keys[0]]["allocation qtt"],floor(df_portfolio_2.loc[ind,"Quantity"]/3))
+                                                #+max(0,floor(df_portfolio_2.loc[ind,"Quantity"]/3)-possible_allocation[keys[1]]["allocation qtt"])+max(0,floor(df_portfolio_2.loc[ind,"Quantity"]/3)-possible_allocation[keys[2]]["allocation qtt"]))
+                                                #df_portfolio_2.loc[ind,"allocation qtt"+str(keys[1])] = min(possible_allocation[keys[1]]["allocation qtt"],floor(df_portfolio_2.loc[ind,"Quantity"]/3))
+                                                #+max(0,floor(df_portfolio_2.loc[ind,"Quantity"]/3)-possible_allocation[keys[0]]["allocation qtt"])+max(0,floor(df_portfolio_2.loc[ind,"Quantity"]/3)-possible_allocation[keys[2]]["allocation qtt"]))
+                                                #df_portfolio_2.loc[ind,"allocation qtt"+str(keys[2])] = min(possible_allocation[keys[2]]["allocation qtt"],floor(df_portfolio_2.loc[ind,"Quantity"]/3))
+                                                #+max(0,floor(df_portfolio_2.loc[ind,"Quantity"]/3)-possible_allocation[keys[0]]["allocation qtt"])+max(0,floor(df_portfolio_2.loc[ind,"Quantity"]/3)-possible_allocation[keys[1]]["allocation qtt"]))
                                                 
+
                                                 df_portfolio_2.loc[ind,"allocation "+str(keys[0])]= df_portfolio_2.loc[ind,"allocation qtt"+str(keys[0])]*df_portfolio_2.loc[ind,"Price EUR"]*df_portfolio_2.loc[ind, 'Haircut '+str(keys[0])]
                                                 df_portfolio_2.loc[ind,"allocation "+str(keys[1])]= df_portfolio_2.loc[ind,"allocation qtt"+str(keys[1])]*df_portfolio_2.loc[ind,"Price EUR"]*df_portfolio_2.loc[ind, 'Haircut '+str(keys[1])]
                                                 df_portfolio_2.loc[ind,"allocation "+str(keys[2])]= df_portfolio_2.loc[ind,"allocation qtt"+str(keys[2])]*df_portfolio_2.loc[ind,"Price EUR"]*df_portfolio_2.loc[ind, 'Haircut '+str(keys[2])]
@@ -317,12 +335,14 @@ def perform_optimization(constraint,df_portfolio):
         df_portfolio_2["Quantity Kept in Book"] = df_portfolio_2["Quantity"]-df_portfolio_2["allocation qtt1"]-df_portfolio_2["allocation qtt2"]-df_portfolio_2["allocation qtt3"]
         df_portfolio_2["Value Kept in Book"] = df_portfolio_2["Quantity Kept in Book"]*df_portfolio_2["Price EUR"]
         score_kept_in_book = (df_portfolio_2["Value Kept in Book"]*df_portfolio_2["new_ratings"]).sum()
-        st.write(score_kept_in_book)
+        st.write("Score of the Rating weighted value kept in Book (the lower the better) "+str(score_kept_in_book))
         ouptput_total_allocation = pd.DataFrame(df_portfolio_2[["allocation 1","allocation 2","allocation 3"]].sum(),columns=["Total Allocation"])
         ouptput_total_allocation['Required Exposure'] = [float(constraint[j]["exposure"]) for j in constraint.keys()]
+        st.write("Total Allocation VS Target")
         if not np.all(ouptput_total_allocation['Required Exposure']<=ouptput_total_allocation['Total Allocation']):
-                st.write("Problem")
+                st.write("Did not succeed in reaching required exposure")
         st.write(ouptput_total_allocation)
+        st.write("Augmented portfolio with Allocations")
         st.write(df_portfolio_2)
         return df_portfolio_2
 
@@ -374,7 +394,7 @@ def get_exchange_rate(data):
 
 st.set_page_config(layout="wide")
 pages = {
-        "Import Portfolio in Cloud Database":app()
+        "Main":app()
         }
 st.sidebar.title("Collateral Manager")
 select_page = st.sidebar.radio("GO TO : ", list(pages.keys()))

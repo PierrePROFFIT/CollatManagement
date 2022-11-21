@@ -5,12 +5,9 @@ from deta import Deta
 import numpy as np
 from math import floor, ceil
 import yfinance as yf
-import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import json
-from pathlib import Path
-import os
 
 def app():
         """
@@ -55,15 +52,13 @@ def app():
                         st.write("Found agents already defined in database for the selected date")
                         st.write(deta_db_constraints_df.set_index("counterparty"))
                         deta_db_constraints_dict = deta_db_constraints_df.to_dict("index")
-                        
                 else:
-                        #deta_db_constraints_list=[1,2]
                         deta_db_constraints_dict = {int(k):v for k,v in json.load(open( "lib/data/default_constraints.json")).items()}
+
                 with st.form(key='my_form'):
                         ud_constraints={}
                         nb_agents = 3
                         cols = st.columns(int(nb_agents))
-                        
                         for i, col in enumerate(cols):
                                 with col:
                                         st.write("Counterparty "+str(i+1))
@@ -114,25 +109,12 @@ def app():
                         #Display visualization
                         visualize_output(optimization_ouput)
 
-def put_df(dict_data,name,date,key_field,deta):
-        """
-        Function that enables to write in remote Deta database
-        """
-        deta_db = deta.Base(name+"_"+str(date))
-        for k in dict_data.keys():
-                if key_field not in dict_data[k].keys():
-                        st.write("Make sure there's a column "+str(key_field)+ " in your file as this column will be used as key")
-                else:
-                        deta_db.put(dict_data[k],dict_data[k][key_field])
-
 def perform_optimization(constraint,df_portfolio):
         """
         Function that performs optimization given a set of constraints and a portfolio (pandas dataframe)
         """
-        #attribution_order_if_eq_value = [1,2,3]
         best_df = []
         all_permutations = [[3,2,1],[3,1,2],[1,2,3],[1,3,2],[2,1,3],[2,3,1]]
-        #all_permutations=[[1,2,3]]
         for attribution_order_if_eq_value in all_permutations:
                 #Load ratings mapping
                 df_ratings = pd.read_excel("lib/data/ratings_project.xlsx")
@@ -152,7 +134,6 @@ def perform_optimization(constraint,df_portfolio):
                 #Compute Market Capitalization (in EUR)
                 df_portfolio_2['Market Capitalization EUR'] = df_portfolio_2['Price EUR'].astype(float)*df_portfolio_2['Quantity'].astype(float)
                 #Check if ADTV>3*Average ADTV
-                #########
                 df_portfolio_2['ADTV_test'] = np.where(df_portfolio_2['ADTV'].astype(float)>3*df_portfolio_2['Average 3 Months ADTV'].astype(float),0,1)
                 #Ensure that type of Quantity field is integer
                 df_portfolio_2["Quantity"] = df_portfolio_2["Quantity"].astype(int)
@@ -165,7 +146,7 @@ def perform_optimization(constraint,df_portfolio):
                         #Create a Value field for each counterparty that corresponds to the haircuted price of the securities for the eligible securities
                         df_portfolio_2['Value '+str(j+1)] = df_portfolio_2['Haircut '+str(j+1)]*df_portfolio_2["Eligible Counterparty "+str(j+1)]*df_portfolio_2["Market Capitalization EUR"]
                 
-                #Start optimization
+                ##Start optimization
 
                 #Sort portfolio dataframe by new_ratings values (decreasing order)
                 df_portfolio_2.sort_values(by="new_ratings",inplace=True,axis=0,ascending=False)
@@ -224,7 +205,6 @@ def perform_optimization(constraint,df_portfolio):
                                                 qtt=df_portfolio_2.loc[ind,"Quantity"]
                                                 price=df_portfolio_2.loc[ind,"Price EUR"]
                                                 haircut=df_portfolio_2.loc[ind, 'Haircut '+str(j)]
-                                                #ceil
                                                 #If max_add_concentration==max_add_total then the most constraining constraint is one of the concentration rule thus we take the floor to stay below the constraint threshold
                                                 if max_add_concentration==max_add_total:
                                                         possible_allocation[j]["allocation qtt"] = floor(max_add_total/(price*haircut))
@@ -254,34 +234,23 @@ def perform_optimization(constraint,df_portfolio):
                                                 df_portfolio_2.loc[ind,"allocation qtt"+str(keys[2])] = min(df_portfolio_2.loc[ind,"Quantity"]-df_portfolio_2.loc[ind,"allocation qtt"+str(keys[0])]-df_portfolio_2.loc[ind,"allocation qtt"+str(keys[1])],possible_allocation[keys[2]]["allocation qtt"])
                                                 df_portfolio_2.loc[ind,"allocation "+str(keys[2])] = df_portfolio_2.loc[ind,"allocation qtt"+str(keys[2])]*df_portfolio_2.loc[ind,"Price EUR"]*df_portfolio_2.loc[ind, 'Haircut '+str(keys[2])]
 
-                                
-
-                #filter portfolio : eligible_counterparty_i, sort by score
-                # go through each line, check that respect conditions
                 #Compute the Quantity Kept in Book and its market value
                 df_portfolio_2["Quantity Kept in Book"] = df_portfolio_2["Quantity"]-df_portfolio_2["allocation qtt1"]-df_portfolio_2["allocation qtt2"]-df_portfolio_2["allocation qtt3"]
                 df_portfolio_2["Value Kept in Book"] = df_portfolio_2["Quantity Kept in Book"]*df_portfolio_2["Price EUR"]
+                #Compute the average rating of the securities kept in book
+                score_kept_in_book = (df_portfolio_2["Value Kept in Book"]*df_portfolio_2["new_ratings"]).sum()/df_portfolio_2["Value Kept in Book"].sum()
+                #Construct a dataframe that contains amount of total allocation by counterparty and required exposure
+                output_total_allocation = pd.DataFrame(df_portfolio_2[["allocation 1","allocation 2","allocation 3"]].sum(),columns=["Total Allocation"])
+                output_total_allocation['Required Exposure'] = [float(constraint[j]["exposure"]) for j in constraint.keys()]
                 
-                score_kept_in_book = (df_portfolio_2["Value Kept in Book"]*df_portfolio_2["new_ratings"]).sum()
-                st.write("Score of the Rating weighted value kept in Book (the lower the better) "+str(score_kept_in_book))
-                ouptput_total_allocation = pd.DataFrame(df_portfolio_2[["allocation 1","allocation 2","allocation 3"]].sum(),columns=["Total Allocation"])
-                ouptput_total_allocation['Required Exposure'] = [float(constraint[j]["exposure"]) for j in constraint.keys()]
-                
-                #st.write("Total Allocation VS Target")
-                #if not np.all(ouptput_total_allocation['Required Exposure']<=ouptput_total_allocation['Total Allocation']):
-                #        st.write("Did not succeed in reaching required exposure")
-                st.write(ouptput_total_allocation)
-
-                #st.write("Augmented portfolio with Allocations")
-                #st.write(df_portfolio_2)
-
+                #Store in best_... variables the results associated with the permutation that yields the best score_kept_in_book or, if none of the permutations end up matching the required exposures, the permutation that yields the best tot_exposure
                 if len(best_df)==0:
                         best_permutation = attribution_order_if_eq_value
                         best_df=df_portfolio_2
                         best_df_score = score_kept_in_book
-                        best_df_tot_exposure = ouptput_total_allocation[['Required Exposure','Total Allocation']].min(axis=1).sum()/ouptput_total_allocation['Required Exposure'].sum()
+                        best_df_tot_exposure = output_total_allocation[['Required Exposure','Total Allocation']].min(axis=1).sum()/output_total_allocation['Required Exposure'].sum()
                 else:
-                        tot_exposure = ouptput_total_allocation[['Required Exposure','Total Allocation']].min(axis=1).sum()/ouptput_total_allocation['Required Exposure'].sum()
+                        tot_exposure = output_total_allocation[['Required Exposure','Total Allocation']].min(axis=1).sum()/output_total_allocation['Required Exposure'].sum()
                         if tot_exposure > best_df_tot_exposure:
                                 best_df_tot_exposure = tot_exposure
                                 best_df=df_portfolio_2
@@ -294,20 +263,31 @@ def perform_optimization(constraint,df_portfolio):
                                         best_df_score = score_kept_in_book
                                         best_permutation = attribution_order_if_eq_value
 
-        st.write("Score of the Rating weighted value kept in Book (the lower the better) "+str(best_df_score))
+        st.write("Score : Average Rating of the securities kept in Book (weighted by Market Cap. EUR) "+str(best_df_score))
         st.write("Best allocation order when equal valuation "+str(best_permutation))
-        ouptput_total_allocation = pd.DataFrame(best_df[["allocation 1","allocation 2","allocation 3"]].sum(),columns=["Total Allocation"])
-        ouptput_total_allocation['Required Exposure'] = [float(constraint[j]["exposure"]) for j in constraint.keys()]
+        output_total_allocation = pd.DataFrame(best_df[["allocation 1","allocation 2","allocation 3"]].sum(),columns=["Total Allocation"])
+        output_total_allocation['Required Exposure'] = [float(constraint[j]["exposure"]) for j in constraint.keys()]
         
-        st.write("Total Allocation VS Target")
-        if not np.all(ouptput_total_allocation['Required Exposure']<=ouptput_total_allocation['Total Allocation']):
+        st.write("Total Allocation VS Required Exposure")
+        if not np.all(output_total_allocation['Required Exposure']<=output_total_allocation['Total Allocation']):
                 st.write("Did not succeed in reaching required exposure")
-        st.write(ouptput_total_allocation)
+        st.write(output_total_allocation)
 
         st.write("Augmented portfolio with Allocations")
         st.write(best_df)
 
         return best_df
+
+def put_df(dict_data,name,date,key_field,deta):
+        """
+        Function that enables to write in remote Deta database
+        """
+        deta_db = deta.Base(name+"_"+str(date))
+        for k in dict_data.keys():
+                if key_field not in dict_data[k].keys():
+                        st.write("Make sure there's a column "+str(key_field)+ " in your file as this column will be used as key")
+                else:
+                        deta_db.put(dict_data[k],dict_data[k][key_field])
 
 def apply_filter(data,constraint):
         """
